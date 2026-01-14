@@ -6,7 +6,8 @@ from telegram.ext import (
     CommandHandler,
     MessageHandler,
     filters,
-    CallbackContext
+    CallbackContext,
+    Application
 )
 from dotenv import load_dotenv
 
@@ -39,7 +40,7 @@ PROMPTS = {
 }
 
 # ================== COMMAND HANDLERS ==================
-def start(update: Update, context: CallbackContext):
+async def start(update: Update, context: CallbackContext):
     """Send a message when the command /start is issued."""
     user_id = update.effective_user.id
     username = update.effective_user.username or update.effective_user.first_name
@@ -47,7 +48,7 @@ def start(update: Update, context: CallbackContext):
     logger.info(f"User {user_id} ({username}) started the bot")
     
     if user_id == ADMIN_ID:
-        update.message.reply_text(
+        await update.message.reply_text(
             "👑 Admin Panel\n\n"
             "Commands:\n"
             "/notify <user_id> - Send match notification\n"
@@ -62,7 +63,7 @@ def start(update: Update, context: CallbackContext):
         "photos": []
     }
     
-    update.message.reply_text(
+    await update.message.reply_text(
         f"👋 Welcome {username}!\n\n"
         "I'll help you create a dating profile.\n\n"
         "Let's start with some basic information.\n\n"
@@ -70,14 +71,14 @@ def start(update: Update, context: CallbackContext):
     )
 
 
-def handle_text(update: Update, context: CallbackContext):
+async def handle_text(update: Update, context: CallbackContext):
     """Handle text messages for profile creation."""
     user_id = update.effective_user.id
     text = update.message.text.strip()
     
     # Skip if user hasn't started
     if user_id not in user_data:
-        update.message.reply_text("Please start with /start")
+        await update.message.reply_text("Please start with /start")
         return
     
     user_info = user_data[user_id]
@@ -104,22 +105,22 @@ def handle_text(update: Update, context: CallbackContext):
     # Check if all fields are filled
     if user_info["step"] < len(FIELDS):
         next_field = FIELDS[user_info["step"]]
-        update.message.reply_text(PROMPTS[next_field])
+        await update.message.reply_text(PROMPTS[next_field])
     else:
-        update.message.reply_text(
+        await update.message.reply_text(
             "✅ Great! All information collected!\n\n"
             "Now please send 1-3 photos 📸\n"
             "(Send them one by one)"
         )
 
 
-def handle_photo(update: Update, context: CallbackContext):
+async def handle_photo(update: Update, context: CallbackContext):
     """Handle photo messages."""
     user_id = update.effective_user.id
     
     # Skip if user hasn't started
     if user_id not in user_data:
-        update.message.reply_text("Please start with /start")
+        await update.message.reply_text("Please start with /start")
         return
     
     user_info = user_data[user_id]
@@ -127,7 +128,7 @@ def handle_photo(update: Update, context: CallbackContext):
     # Check if all fields are filled
     if user_info["step"] < len(FIELDS):
         current_field = FIELDS[user_info["step"]]
-        update.message.reply_text(f"Please complete: {PROMPTS[current_field]}")
+        await update.message.reply_text(f"Please complete: {PROMPTS[current_field]}")
         return
     
     # Store photo
@@ -137,15 +138,15 @@ def handle_photo(update: Update, context: CallbackContext):
     photo_count = len(user_info["photos"])
     
     if photo_count == 1:
-        update.message.reply_text("📸 Photo received! You can send up to 2 more photos.")
+        await update.message.reply_text("📸 Photo received! You can send up to 2 more photos.")
     elif photo_count == 2:
-        update.message.reply_text("📸 Second photo received! You can send one more.")
+        await update.message.reply_text("📸 Second photo received! You can send one more.")
     elif photo_count >= 3:
         # Submit profile
-        submit_profile(update, context, user_id, user_info)
+        await submit_profile(update, context, user_id, user_info)
 
 
-def submit_profile(update: Update, context: CallbackContext, user_id: int, user_info: dict):
+async def submit_profile(update: Update, context: CallbackContext, user_id: int, user_info: dict):
     """Submit the completed profile to admin."""
     try:
         # Create profile summary
@@ -164,20 +165,20 @@ def submit_profile(update: Update, context: CallbackContext, user_id: int, user_
         
         # Send photos to admin
         for i, photo_id in enumerate(user_info['photos'], 1):
-            context.bot.send_photo(
+            await context.bot.send_photo(
                 chat_id=ADMIN_ID,
                 photo=photo_id,
                 caption=profile_text if i == 1 else f"Photo {i} of {len(user_info['photos'])}"
             )
         
         # Send text summary to admin (in case photos fail)
-        context.bot.send_message(
+        await context.bot.send_message(
             chat_id=ADMIN_ID,
             text=profile_text
         )
         
         # Confirm to user
-        update.message.reply_text(
+        await update.message.reply_text(
             "✅ Profile submitted successfully!\n\n"
             "Your profile is now with our admin.\n"
             "If someone likes your profile, we'll notify you! ❤️\n\n"
@@ -190,42 +191,42 @@ def submit_profile(update: Update, context: CallbackContext, user_id: int, user_
             
     except Exception as e:
         logger.error(f"Error submitting profile: {e}")
-        update.message.reply_text(
+        await update.message.reply_text(
             "❌ Error submitting profile. Please try again with /start"
         )
 
 
-def notify(update: Update, context: CallbackContext):
+async def notify(update: Update, context: CallbackContext):
     """Admin command to notify a user about a match."""
     user_id = update.effective_user.id
     
     if user_id != ADMIN_ID:
-        update.message.reply_text("❌ This command is for admin only.")
+        await update.message.reply_text("❌ This command is for admin only.")
         return
     
     if not context.args:
-        update.message.reply_text("Usage: /notify <user_id>")
+        await update.message.reply_text("Usage: /notify <user_id>")
         return
     
     try:
         target_id = int(context.args[0])
         message = " ".join(context.args[1:]) if len(context.args) > 1 else "❤️ Someone liked your profile! We'll connect you soon."
         
-        context.bot.send_message(
+        await context.bot.send_message(
             chat_id=target_id,
             text=f"🎉 MATCH ALERT!\n\n{message}"
         )
         
-        update.message.reply_text(f"✅ Notification sent to user {target_id}")
+        await update.message.reply_text(f"✅ Notification sent to user {target_id}")
         
     except ValueError:
-        update.message.reply_text("❌ Invalid user ID. Must be a number.")
+        await update.message.reply_text("❌ Invalid user ID. Must be a number.")
     except Exception as e:
         logger.error(f"Error sending notification: {e}")
-        update.message.reply_text(f"❌ Error: {str(e)}")
+        await update.message.reply_text(f"❌ Error: {str(e)}")
 
 
-def stats(update: Update, context: CallbackContext):
+async def stats(update: Update, context: CallbackContext):
     """Admin command to show bot statistics."""
     user_id = update.effective_user.id
     
@@ -238,20 +239,20 @@ def stats(update: Update, context: CallbackContext):
         f"👥 Total fields collected: {sum(len(data['data']) for data in user_data.values())}\n"
     )
     
-    update.message.reply_text(stats_text)
+    await update.message.reply_text(stats_text)
 
 
-def cancel(update: Update, context: CallbackContext):
+async def cancel(update: Update, context: CallbackContext):
     """Cancel the current operation."""
     user_id = update.effective_user.id
     
     if user_id in user_data:
         del user_data[user_id]
     
-    update.message.reply_text("❌ Operation cancelled. Use /start to begin again.")
+    await update.message.reply_text("❌ Operation cancelled. Use /start to begin again.")
 
 
-def error_handler(update: Update, context: CallbackContext):
+async def error_handler(update: Update, context: CallbackContext):
     """Log errors."""
     logger.warning(f"Update {update} caused error {context.error}")
 
@@ -266,32 +267,25 @@ def main():
     
     logger.info("Starting bot...")
     
-    # Create the Updater
-    updater = Updater(token=BOT_TOKEN, use_context=True)
-    
-    # Get the dispatcher to register handlers
-    dp = updater.dispatcher
+    # Create the Application
+    application = Application.builder().token(BOT_TOKEN).build()
     
     # Register command handlers
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("notify", notify))
-    dp.add_handler(CommandHandler("stats", stats))
-    dp.add_handler(CommandHandler("cancel", cancel))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("notify", notify))
+    application.add_handler(CommandHandler("stats", stats))
+    application.add_handler(CommandHandler("cancel", cancel))
     
     # Register message handlers
-    dp.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    dp.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     
     # Register error handler
-    dp.add_error_handler(error_handler)
+    application.add_error_handler(error_handler)
     
     # Start the Bot
-    updater.start_polling()
-    
     logger.info("Bot is running and polling...")
-    
-    # Run the bot until you press Ctrl-C
-    updater.idle()
+    application.run_polling()
 
 
 if __name__ == '__main__':
