@@ -57,6 +57,7 @@ async def collect_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = temp[uid]
     text = update.message.text.strip()
 
+    # Find current field to fill
     for field in FIELDS:
         if field not in data:
             if field == "phone" and text.lower() == "skip":
@@ -64,21 +65,30 @@ async def collect_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 data[field] = text
 
-            next_field = next((f for f in FIELDS if f not in data), None)
-
-            if next_field:
-                await update.message.reply_text(PROMPTS[next_field])
-            else:
-                await update.message.reply_text("Send your photos (1–3).")
+            # Find next field to ask
+            for next_field in FIELDS:
+                if next_field not in data:
+                    await update.message.reply_text(PROMPTS[next_field])
+                    return
+            
+            # If all fields are filled
+            await update.message.reply_text("✅ All info collected! Now send your photos (1–3).")
             return
 
 
 async def collect_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if uid not in temp:
+        await update.message.reply_text("Please start with /start first.")
         return
 
-    data = temp[uid]
+    data = temp.get(uid, {})
+
+    # Check if all fields are filled
+    missing_fields = [field for field in FIELDS if field not in data]
+    if missing_fields:
+        await update.message.reply_text(f"Please complete all fields first. Missing: {missing_fields[0]}")
+        return
 
     caption = (
         "📩 New Profile\n\n"
@@ -91,25 +101,31 @@ async def collect_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"User ID: {uid}"
     )
 
-    # Forward photo + send details
-    await update.message.forward(chat_id=ADMIN_ID)
-    await context.bot.send_message(chat_id=ADMIN_ID, text=caption)
-
-    await update.message.reply_text(
-        "✅ Done!\n"
-        "If someone liked your profile, we’ll inform you ❤️\n"
-        "Admin will contact you if matched."
-    )
-
-    # 🔥 DELETE USER DATA IMMEDIATELY
-    del temp[uid]
+    try:
+        # Forward photo to admin
+        await update.message.forward(chat_id=ADMIN_ID)
+        await context.bot.send_message(chat_id=ADMIN_ID, text=caption)
+        
+        await update.message.reply_text(
+            "✅ Profile submitted successfully!\n"
+            "If someone liked your profile, we'll inform you ❤️\n"
+            "Admin will contact you if matched."
+        )
+    except Exception as e:
+        print(f"Error sending to admin: {e}")
+        await update.message.reply_text("❌ Error submitting profile. Please try again later.")
+    finally:
+        # Clean up user data
+        if uid in temp:
+            del temp[uid]
 
 
 async def notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Admin only command.")
         return
 
-    if not context.args:
+    if len(context.args) < 1:
         await update.message.reply_text("Usage: /notify <user_id>")
         return
 
@@ -117,23 +133,40 @@ async def notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target_id = int(context.args[0])
         await context.bot.send_message(
             chat_id=target_id,
-            text="❤️ Someone liked your profile!\nWe’ll connect you soon."
+            text="❤️ Someone liked your profile!\nWe'll connect you soon."
         )
-    except:
-        await update.message.reply_text("Invalid user ID.")
+        await update.message.reply_text(f"✅ Notification sent to user {target_id}")
+    except ValueError:
+        await update.message.reply_text("❌ Invalid user ID. Must be a number.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+
+async def cleanup_temp(context: ContextTypes.DEFAULT_TYPE):
+    """Optional: Clean up old temporary data periodically"""
+    # Remove entries older than 1 hour
+    pass
 
 
 def main():
+    print("Starting bot...")
+    
+    # Create application
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
+    # Add handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("notify", notify))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, collect_text))
     app.add_handler(MessageHandler(filters.PHOTO, collect_photo))
 
-    app.run_polling()
+    # Start polling
+    print("Bot is polling...")
+    app.run_polling(
+        drop_pending_updates=True,
+        allowed_updates=Update.ALL_TYPES
+    )
 
 
 if __name__ == "__main__":
     main()
-
