@@ -13,7 +13,7 @@ import os
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
 # 🔒 PERMANENT ADMIN (PUT YOUR TELEGRAM NUMERIC ID HERE)
-ADMIN_ID = 123456789   # <-- CHANGE THIS ONLY
+ADMIN_ID = 8542011335   # <-- CHANGE THIS ONLY
 
 # ============================================
 
@@ -136,3 +136,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
