@@ -1,4 +1,4 @@
-from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
+from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -6,10 +6,16 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
+
 import os
 
+# ================== CONFIG ==================
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-ADMIN_ID = None
+
+# 🔒 PERMANENT ADMIN (PUT YOUR TELEGRAM NUMERIC ID HERE)
+ADMIN_ID = 123456789   # <-- CHANGE THIS ONLY
+
+# ============================================
 
 temp = {}
 
@@ -31,17 +37,17 @@ PROMPTS = {
     "bio": "Write two attractive lines about you:"
 }
 
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global ADMIN_ID
     uid = update.effective_user.id
 
-    if ADMIN_ID is None:
-        ADMIN_ID = uid
-        await update.message.reply_text("✅ Admin registered.")
+    if uid == ADMIN_ID:
+        await update.message.reply_text("✅ Admin online.")
         return
 
     temp[uid] = {}
     await update.message.reply_text(PROMPTS["name"])
+
 
 async def collect_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -49,7 +55,7 @@ async def collect_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     data = temp[uid]
-    text = update.message.text
+    text = update.message.text.strip()
 
     for field in FIELDS:
         if field not in data:
@@ -58,16 +64,14 @@ async def collect_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 data[field] = text
 
-            next_field = next(
-                (f for f in FIELDS if f not in data),
-                None
-            )
+            next_field = next((f for f in FIELDS if f not in data), None)
 
             if next_field:
                 await update.message.reply_text(PROMPTS[next_field])
             else:
                 await update.message.reply_text("Send your photos (1–3).")
             return
+
 
 async def collect_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -77,7 +81,7 @@ async def collect_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = temp[uid]
 
     caption = (
-        f"📩 New Profile\n\n"
+        "📩 New Profile\n\n"
         f"Name: {data['name']}\n"
         f"Age: {data['age']}\n"
         f"Language: {data['language']}\n"
@@ -87,19 +91,26 @@ async def collect_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"User ID: {uid}"
     )
 
+    # Forward photo + send details
     await update.message.forward(chat_id=ADMIN_ID)
     await context.bot.send_message(chat_id=ADMIN_ID, text=caption)
 
     await update.message.reply_text(
         "✅ Done!\n"
         "If someone liked your profile, we’ll inform you ❤️\n"
-        "@Mind_game76  - admin to your contacts."
+        "Admin will contact you if matched."
     )
 
-    del temp[uid]  # DELETE DATA
+    # 🔥 DELETE USER DATA IMMEDIATELY
+    del temp[uid]
+
 
 async def notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usage: /notify <user_id>")
         return
 
     try:
@@ -109,7 +120,8 @@ async def notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text="❤️ Someone liked your profile!\nWe’ll connect you soon."
         )
     except:
-        await update.message.reply_text("Usage: /notify <user_id>")
+        await update.message.reply_text("Invalid user ID.")
+
 
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -120,6 +132,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, collect_photo))
 
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()
