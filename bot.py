@@ -1,4 +1,4 @@
-from telegram import Update
+from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -9,33 +9,73 @@ from telegram.ext import (
 import os
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-ADMIN_USERNAME = "Mind_game76"
+ADMIN_ID = None
 
-user_data_temp = {}
+temp = {}
+
+FIELDS = [
+    "name",
+    "age",
+    "language",
+    "phone",
+    "looking_for",
+    "bio"
+]
+
+PROMPTS = {
+    "name": "Enter your name:",
+    "age": "Enter your age:",
+    "language": "Languages you speak:",
+    "phone": "Phone number (or type Skip):",
+    "looking_for": "Who are you looking for?",
+    "bio": "Write two attractive lines about you:"
+}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_data_temp[update.effective_user.id] = {}
-    await update.message.reply_text("Enter your name:")
-
-async def collect(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global ADMIN_ID
     uid = update.effective_user.id
+
+    if ADMIN_ID is None:
+        ADMIN_ID = uid
+        await update.message.reply_text("✅ Admin registered.")
+        return
+
+    temp[uid] = {}
+    await update.message.reply_text(PROMPTS["name"])
+
+async def collect_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    if uid not in temp:
+        return
+
+    data = temp[uid]
     text = update.message.text
 
-    data = user_data_temp.get(uid, {})
+    for field in FIELDS:
+        if field not in data:
+            if field == "phone" and text.lower() == "skip":
+                data[field] = "Not shared"
+            else:
+                data[field] = text
 
-    steps = ["name", "age", "language", "phone", "looking_for", "bio"]
-    for step in steps:
-        if step not in data:
-            data[step] = text
-            user_data_temp[uid] = data
-            await update.message.reply_text(f"Enter {steps[steps.index(step)+1] if step != 'bio' else 'send your photos'}:")
+            next_field = next(
+                (f for f in FIELDS if f not in data),
+                None
+            )
+
+            if next_field:
+                await update.message.reply_text(PROMPTS[next_field])
+            else:
+                await update.message.reply_text("Send your photos (1–3).")
             return
 
-async def photos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def collect_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    data = user_data_temp.get(uid)
+    if uid not in temp:
+        return
 
-    admin = f"@{ADMIN_USERNAME}"
+    data = temp[uid]
+
     caption = (
         f"📩 New Profile\n\n"
         f"Name: {data['name']}\n"
@@ -43,21 +83,42 @@ async def photos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Language: {data['language']}\n"
         f"Phone: {data['phone']}\n"
         f"Looking for: {data['looking_for']}\n"
-        f"Bio: {data['bio']}"
+        f"Bio: {data['bio']}\n\n"
+        f"User ID: {uid}"
     )
 
-    await update.message.forward(chat_id=admin)
+    await update.message.forward(chat_id=ADMIN_ID)
+    await context.bot.send_message(chat_id=ADMIN_ID, text=caption)
+
     await update.message.reply_text(
-        "✅ Done!\nIf someone liked your profile, we’ll inform you.\nAdd admin to contacts."
+        "✅ Done!\n"
+        "If someone liked your profile, we’ll inform you ❤️\n"
+        "@Mind_game76  - admin to your contacts."
     )
 
-    user_data_temp.pop(uid, None)  # DELETE DATA
+    del temp[uid]  # DELETE DATA
+
+async def notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    try:
+        target_id = int(context.args[0])
+        await context.bot.send_message(
+            chat_id=target_id,
+            text="❤️ Someone liked your profile!\nWe’ll connect you soon."
+        )
+    except:
+        await update.message.reply_text("Usage: /notify <user_id>")
 
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, collect))
-    app.add_handler(MessageHandler(filters.PHOTO, photos))
+    app.add_handler(CommandHandler("notify", notify))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, collect_text))
+    app.add_handler(MessageHandler(filters.PHOTO, collect_photo))
+
     app.run_polling()
 
 if __name__ == "__main__":
