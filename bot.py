@@ -5,7 +5,7 @@ from telegram.ext import (
     Updater,
     CommandHandler,
     MessageHandler,
-    Filters,
+    filters,
     CallbackContext
 )
 from dotenv import load_dotenv
@@ -25,8 +25,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ================== DATA STORAGE ==================
-# In-memory storage (for simplicity)
-# In production, consider using a database
 user_data = {}
 
 # Profile fields and prompts
@@ -111,7 +109,7 @@ def handle_text(update: Update, context: CallbackContext):
         update.message.reply_text(
             "✅ Great! All information collected!\n\n"
             "Now please send 1-3 photos 📸\n"
-            "(Send them one by one or together)"
+            "(Send them one by one)"
         )
 
 
@@ -269,7 +267,7 @@ def main():
     logger.info("Starting bot...")
     
     # Create the Updater
-    updater = Updater(BOT_TOKEN, use_context=True)
+    updater = Updater(token=BOT_TOKEN, use_context=True)
     
     # Get the dispatcher to register handlers
     dp = updater.dispatcher
@@ -281,8 +279,8 @@ def main():
     dp.add_handler(CommandHandler("cancel", cancel))
     
     # Register message handlers
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
-    dp.add_handler(MessageHandler(Filters.photo, handle_photo))
+    dp.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    dp.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     
     # Register error handler
     dp.add_error_handler(error_handler)
